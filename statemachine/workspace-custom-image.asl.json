@@ -1,8 +1,8 @@
 {
   "Comment": "State machine to automate the creation of Amazon WorkSpaces images and bundles.",
-  "StartAt": "Workspace Builder Setup",
+  "StartAt": "Workspaces Builder Setup",
   "States": {
-    "Workspace Builder Setup": {
+    "Workspaces Builder Setup": {
       "Type": "Task",
       "Resource": "${WorkspaceBuilderSetupFunctionArn}",
       "Retry": [
@@ -15,24 +15,24 @@
           ]
         }
       ],
-      "Next": "Check Builder Status (Create)"
+      "Next": "Get Workspaces Builder State"
     },
-    "Check Builder Status (Create)": {
+    "Get Workspaces Builder State": {
       "Type": "Task",
       "Parameters": {
         "WorkspaceIds.$": "States.Array($.AutomationParameters.ImageBuilderWorkSpaceId)"
       },
       "Resource": "arn:aws:states:::aws-sdk:workspaces:describeWorkspaces",
       "ResultPath": "$.ImageBuilderStatus",
-      "Next": "Is Builder Available? (Create)"
+      "Next": "Is Workspaces Builder Available?"
     },
-    "Is Builder Available? (Create)": {
+    "Is Workspaces Builder Available?": {
       "Type": "Choice",
       "Choices": [
         {
           "Variable": "$.ImageBuilderStatus.Workspaces[0].State",
           "StringEquals": "AVAILABLE",
-          "Next": "Attach Builder Security Group",
+          "Next": "Attach Security Group to Workspaces Builder",
           "Comment": "AVAILABLE"
         },
         {
@@ -42,66 +42,71 @@
           "Comment": "ERROR"
         }
       ],
-      "Default": "If Not Available, Wait 3 Min (Create)"
+      "Default": "Wait 3 Min"
     },
     "Failed to Create Builder Workspace": {
       "Type": "Fail"
     },
-    "Attach Builder Security Group": {
+    "Attach Security Group to Workspaces Builder": {
       "Type": "Task",
-      "Resource": "arn:aws:states:::lambda:invoke",
-      "Parameters": {
-        "Payload.$": "$",
-        "FunctionName": "${LambdaFunction02AttachSG.Arn}"
-      },
-      "Comment": "Calls function to attach required security group for WinRM to WorkSpace ENI. Also generates temporary admin password and stores it in parameter store for retreival via API.",
-      "ResultPath": null,
-      "Next": "Apply Ansible Role"
+      "Resource": "${AttachBuilderSecurityGroupFunctionArn}",
+      "Comment": "Calls function to attach required security group for WinRM to WorkSpace ENI.",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ]
+        }
+      ],
+      "Next": "Configure Workspace with Ansible"
     },
-    "Apply Ansible Role": {
+    "Configure Workspace with Ansible": {
       "Type": "Task",
       "Resource": "arn:aws:states:::codebuild:startBuild",
       "Parameters": {
-        "ProjectName": "myProject"
+        "ProjectName": "${AnsibleCodeBuildProjectName}"
       },
-      "Next": "Check Builder Status (Post Configuration)"
+      "Next": "Get Configured Workspace State"
     },
-    "Check Builder Status (Post Configuration)": {
+    "Get Configured Workspace State": {
       "Type": "Task",
       "Parameters": {
         "WorkspaceIds.$": "States.Array($.AutomationParameters.ImageBuilderWorkSpaceId)"
       },
       "Resource": "arn:aws:states:::aws-sdk:workspaces:describeWorkspaces",
       "ResultPath": "$.ImageBuilderStatus",
-      "Next": "Is Builder Available? (Post Configuration)"
+      "Next": "Is Configured Workspace Available?"
     },
-    "Is Builder Available? (Post Configuration)": {
+    "Is Configured Workspace Available?": {
       "Type": "Choice",
       "Choices": [
         {
           "Variable": "$.ImageBuilderStatus.Workspaces[0].State",
           "StringEquals": "AVAILABLE",
-          "Next": "Create Workspace Image",
+          "Next": "Create Workspaces Image",
           "Comment": "AVAILABLE"
         },
         {
           "Variable": "$.ImageBuilderStatus.Workspaces[0].State",
           "StringEquals": "ERROR",
           "Comment": "ERROR",
-          "Next": "Workspace Failed post Configuration"
+          "Next": "Failed to Configure Workspace"
         }
       ],
-      "Default": "If Not Available, Wait 1 Min (Post Configuration)"
+      "Default": "Wait 1 Min"
     },
-    "Workspace Failed post Configuration": {
-      "Type": "Fail"
-    },
-    "If Not Available, Wait 1 Min (Post Configuration)": {
+    "Wait 1 Min": {
       "Type": "Wait",
       "Seconds": 60,
-      "Next": "Check Builder Status (Post Configuration)"
+      "Next": "Get Configured Workspace State"
     },
-    "Create Workspace Image": {
+    "Failed to Configure Workspace": {
+      "Type": "Fail"
+    },
+    "Create Workspaces Image": {
       "Type": "Task",
       "Parameters": {
         "Description.$": "$.ImageDetail.ImageDescription",
@@ -110,10 +115,10 @@
         "Tags.$": "$.AutomationParameters.ImageTags"
       },
       "Resource": "arn:aws:states:::aws-sdk:workspaces:createWorkspaceImage",
-      "Next": "Check Image Status (Post-Create)",
+      "Next": "Check Image Status",
       "ResultPath": "$.ImageStatus"
     },
-    "Check Image Status (Post-Create)": {
+    "Check Image Status": {
       "Type": "Task",
       "Next": "Is Image Available?",
       "Parameters": {
@@ -128,7 +133,7 @@
         {
           "Variable": "$.ImageStatus.Images[0].State",
           "StringEquals": "AVAILABLE",
-          "Next": "Create Workspace Bundle (Tagged)",
+          "Next": "Create Workspace Bundle",
           "Comment": "AVAILABLE"
         },
         {
@@ -138,13 +143,13 @@
           "Next": "Failed to Create Custom Image"
         }
       ],
-      "Default": "If Image Not Available, Wait 10 Min",
+      "Default": "Wait 10 Min",
       "Comment": "If the image is AVAILABLE, check if WorkSpace needs to be retained or not. If the image state is ERROR, then proceed to send notification. Otherwise, loop and wait."
     },
     "Failed to Create Custom Image": {
       "Type": "Fail"
     },
-    "Create Workspace Bundle (Tagged)": {
+    "Create Workspace Bundle": {
       "Type": "Task",
       "Parameters": {
         "BundleDescription.$": "$.AutomationParameters.BundleDescription",
@@ -157,16 +162,11 @@
       },
       "Resource": "arn:aws:states:::aws-sdk:workspaces:createWorkspaceBundle",
       "ResultPath": "$.BundleStatus",
-      "Next": "Cleanup Workspace Builder and User"
+      "Next": "Cleanup Workspace Builder"
     },
-    "Cleanup Workspace Builder and User": {
+    "Cleanup Workspace Builder": {
       "Type": "Task",
-      "Resource": "arn:aws:states:::lambda:invoke",
-      "OutputPath": "$.Payload",
-      "Parameters": {
-        "Payload.$": "$",
-        "FunctionName": "remove-user-and-workspace"
-      },
+      "Resource": "${WorkspaceBuilderCleanupFunctionArn}",
       "Retry": [
         {
           "ErrorEquals": [
@@ -174,33 +174,20 @@
             "Lambda.AWSLambdaException",
             "Lambda.SdkClientException",
             "Lambda.TooManyRequestsException"
-          ],
-          "IntervalSeconds": 1,
-          "MaxAttempts": 3,
-          "BackoffRate": 2,
-          "JitterStrategy": "FULL"
+          ]
         }
       ],
       "End": true
     },
-    "If Not Available, Wait 3 Min (Create)": {
+    "Wait 3 Min": {
       "Type": "Wait",
       "Seconds": 180,
-      "Next": "Check Builder Status (Create)"
+      "Next": "Get Workspaces Builder State"
     },
-    "If Image Not Available, Wait 10 Min": {
+    "Wait 10 Min": {
       "Type": "Wait",
       "Seconds": 600,
-      "Next": "Check Image Status (Post-Wait)"
-    },
-    "Check Image Status (Post-Wait)": {
-      "Type": "Task",
-      "Next": "Is Image Available?",
-      "Parameters": {
-        "ImageIds.$": "States.Array($.ImageStatus.Images[0].ImageId)"
-      },
-      "Resource": "arn:aws:states:::aws-sdk:workspaces:describeWorkspaceImages",
-      "ResultPath": "$.ImageStatus"
+      "Next": "Check Image Status"
     }
   }
 }
