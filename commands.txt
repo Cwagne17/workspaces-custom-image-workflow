@@ -1,0 +1,17 @@
+# Follow Prompts
+sam init
+
+# Setup initial deployment
+sam deploy --guided
+
+# Setup dev stage for the pipeline
+sam pipeline bootstrap --stage dev
+
+# Created the stage to use OIDC from GitHub actions for the pipeline
+
+# Setup prod stage for the pipeline
+sam pipeline bootstrap --stage prod
+
+# Re-used the OICD setup from the previous stage
+
+# Initialize the pipeline
