@@ -5,6 +5,23 @@ Description: >
 
   Sample SAM Template for workspaces-custom-image-workflow
 Resources:
+  rWorkspacesCustomImageStateMachine:
+    Type: AWS::Serverless::StateMachine # More info about State Machine Resource: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-statemachine.html
+    Properties:
+      DefinitionUri: statemachine/workspaces_custom_image.asl.json
+      DefinitionSubstitutions:
+        WorkspacesCustomImageFunctionArn: !GetAtt WorkspacesCustomImageFunction.Arn
+      Events:
+        HourlySchedule:
+          Type: Schedule # More info about Schedule Event Source: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-property-statemachine-schedule.html
+          Properties:
+            Description: Schedule to run the workspaces custom image state machine every hour
+            Enabled: false # This schedule is disabled by default to avoid incurring charges.
+            Schedule: rate(1 hour)
+      Policies: # Find out more about SAM policy templates: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-policy-templates.html
+        - LambdaInvokePolicy:
+            FunctionName: !Ref WorkspacesCustomImageFunction
+
   StockTradingStateMachine:
     Type: AWS::Serverless::StateMachine # More info about State Machine Resource: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-statemachine.html
     Properties:
