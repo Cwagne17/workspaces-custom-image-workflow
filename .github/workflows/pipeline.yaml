@@ -3,11 +3,11 @@ name: Pipeline
 on:
   push:
     branches:
-      - 'main'
-      - 'feature**'
+      - "main"
+      - "feature**"
   delete:
     branches:
-      - 'feature**'
+      - "feature**"
 
 env:
   SAM_TEMPLATE: template.yaml
@@ -35,6 +35,9 @@ jobs:
       - uses: actions/checkout@v3
       - run: |
           # trigger the tests here
+          echo 'Running unit tests'
+          pip3 install pytest pytest-mock
+          python3 -m pytest tests/unit
 
   delete-feature:
     if: startsWith(github.event.ref, 'feature') && github.event_name == 'delete'
